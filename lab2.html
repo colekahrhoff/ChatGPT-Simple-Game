@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gold Nugget Catcher</title>
+<style>
+    #game-container {
+        width: 400px;
+        height: 400px;
+        border: 1px solid black;
+        position: relative;
+        background-image: url('background.png'); /* Replace 'background.png' with your background image */
+        background-size: cover;
+    }
+    #basket {
+        width: 50px;
+        height: 50px;
+        background-image: url('basket.png'); /* Replace 'basket.png' with your basket image */
+        background-position: center;
+        background-repeat: no-repeat;
+        position: absolute;
+        bottom: 70px; /* Start 20 pixels up from the bottom */
+        left: 0; /* Start at the left */
+    }
+    .nugget {
+        position: absolute;
+        background-repeat: no-repeat;
+        background-size: contain;
+    }
+    .gold.small { width: 20px; height: 20px; background-image: url('small_nugget.png'); /* Replace 'small_nugget.png' with your small nugget image */ }
+    .gold.medium { width: 30px; height: 30px; background-image: url('medium_nugget.png'); /* Replace 'medium_nugget.png' with your medium nugget image */ }
+    .gold.large { width: 40px; height: 40px; background-image: url('large_nugget.png'); /* Replace 'large_nugget.png' with your large nugget image */ }
+    .bomb { width: 30px; height: 30px; background-image: url('bomb.png'); /* Replace 'bomb.png' with your bomb image */ }
+    .effect {
+        position: absolute;
+        font-size: 24px;
+        color: gold;
+        animation: popAndRotate 1s forwards;
+    }
+    @keyframes popAndRotate {
+        0% { opacity: 0; transform: translateY(-50%) rotate(0deg); }
+        100% { opacity: 1; transform: translateY(-50%) rotate(360deg); }
+    }
+    #info {
+        text-align: center;
+    }
+    #gold-rush {
+        display: none;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 48px;
+        color: gold;
+        text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+        animation: flash 1s infinite alternate;
+    }
+    @keyframes flash {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+    }
+</style>
+</head>
+<body>
+<div id="game-container">
+    <div id="basket"></div>
+    <div id="gold-rush">Gold Rush!</div>
+</div>
+<div id="info">
+    <div id="time"></div>
+    <div id="score"></div>
+</div>
+<audio id="chaChingSound" src="cha-ching.mp3"></audio>
+<audio id="buzzerSound" src="buzzer.mp3"></audio>
+<script>
+    let score = 0;
+    let timeLeft = 60; // in seconds
+    const gameDuration = 60; // in seconds
+    let startTime;
+    let nuggetInterval;
+    let timerInterval;
+    let goldRushActive = false;
+    let consecutiveGoldNuggets = 0;
+
+    function startGame() {
+        score = 0;
+        timeLeft = gameDuration;
+        updateScore();
+        updateTimer();
+        startTime = Date.now();
+        nuggetInterval = setInterval(dropNuggets, 1000); // Spawn nuggets every 1 second
+        timerInterval = setInterval(updateTimer, 1000);
+        setTimeout(endGame, gameDuration * 1000);
+        setInterval(checkAllCollisions, 10); // Check collisions every 10 milliseconds
+        simulateKeyPress('ArrowDown'); // Simulate a key press for the down arrow after game starts
+    }
+
+    function simulateKeyPress(key) {
+        const event = new KeyboardEvent('keydown', {
+            key: key,
+            keyCode: key === 'ArrowDown' ? 40 : key === 'ArrowUp' ? 38 : key === 'ArrowLeft' ? 37 : key === 'ArrowRight' ? 39 : 0
+        });
+        document.dispatchEvent(event);
+    }
+
+    function dropNuggets() {
+        if (!goldRushActive) {
+            const numNuggets = Math.floor(Math.random() * 4); // Generate between 0 and 3 nuggets
+            for (let i = 0; i < numNuggets; i++) {
+                dropNugget();
+            }
+        }
+    }
+
+    function dropNugget() {
+        if (!goldRushActive) {
+            const types = ['small', 'medium', 'large', 'bomb']; // 75% chance for gold, 25% chance for bomb
+            const type = types[Math.floor(Math.random() * types.length)];
+            const nugget = document.createElement('div');
+            nugget.classList.add('nugget');
+            nugget.classList.add('gold');
+            nugget.classList.add(type);
+            nugget.style.left = Math.random() * (document.getElementById('game-container').offsetWidth - 50) + 'px';
+            document.getElementById('game-container').appendChild(nugget);
+            const distance = document.getElementById('game-container').offsetHeight;
+            const speed = ((Math.random() * 7000 + 3000) / 1000) * 10; // Varying between 3 and 10 seconds, then multiplied by 10
+            const duration = distance / speed;
+            moveNugget(nugget, duration, type);
+        }
+    }
+
+    function moveNugget(nugget, duration, type) {
+        nugget.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(' + document.getElementById('game-container').offsetHeight + 'px)' }], {
+            duration: duration * 1000,
+            iterations: 1,
+            easing: 'linear',
+            fill: 'forwards',
+            onFinish: function() {
+                if (!nugget.parentNode) return; // Ensure nugget is still in DOM
+                nugget.remove();
+                if (!nugget.collected && type !== 'bomb' && !goldRushActive) {
+                    if (type === 'small') score += 1; // Award 1 point for small nugget
+                    else if (type === 'medium') score += 3; // Award 3 points for medium nugget
+                    else if (type === 'large') score += 5; // Award 5 points for large nugget
+                    updateScore();
+                    // Add visual effect for collecting gold
+                    addGoldEffect();
+                    consecutiveGoldNuggets++;
+                    if (consecutiveGoldNuggets >= 20 && !goldRushActive) {
+                        startGoldRush();
+                    }
+                }
+            }
+        });
+
+        // Check if nugget has reached the bottom of the window
+        setTimeout(() => {
+            if (nugget.parentNode) {
+                nugget.remove(); // Remove nugget if it hasn't been collected
+            }
+        }, duration * 1000);
+    }
+
+    function checkCollision(nugget) {
+        if (!goldRushActive) {
+            const basket = document.getElementById('basket');
+            const nuggetRect = nugget.getBoundingClientRect();
+            const basketRect = basket.getBoundingClientRect();
+            if (nuggetRect.bottom >= basketRect.top &&
+                nuggetRect.left >= basketRect.left &&
+                nuggetRect.right <= basketRect.right &&
+                nuggetRect.top <= basketRect.bottom) {
+                nugget.collected = true;
+                nugget.remove();
+                if (nugget.classList.contains('bomb')) {
+                    score -= 10; // Deduct 10 points for bomb
+                    updateScore();
+                    document.getElementById('buzzerSound').play(); // Play buzzer sound for bombs
+                } else {
+                    // Play "cha ching" sound for collecting nuggets
+                    document.getElementById('chaChingSound').play();
+                    const type = nugget.classList[2]; // Get the nugget size from its class
+                    if (type === 'small') score += 1; // Award 1 point for small nugget
+                    else if (type === 'medium') score += 3; // Award 3 points for medium nugget
+                    else if (type === 'large') score += 5; // Award 5 points for large nugget
+                    updateScore();
+                    // Add visual effect for collecting gold
+                    addGoldEffect();
+                    consecutiveGoldNuggets++;
+                    if (consecutiveGoldNuggets >= 20 && !goldRushActive) {
+                        startGoldRush();
+                    }
+                }
+            }
+        }
+    }
+
+    function updateTimer() {
+        const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+        timeLeft = Math.max(gameDuration - elapsedTime, 0);
+        document.getElementById('time').innerText = 'Time: ' + timeLeft + 's';
+    }
+
+    function updateScore() {
+        document.getElementById('score').innerText = 'Score: ' + score;
+    }
+
+    function endGame() {
+        clearInterval(nuggetInterval);
+        clearInterval(timerInterval);
+        const playAgain = confirm('Game over! Your score is: ' + score + '. Do you want to play again?');
+        if (playAgain) {
+            startGame();
+        }
+    }
+
+    function checkAllCollisions() {
+        const nuggets = document.querySelectorAll('.nugget');
+        nuggets.forEach(nugget => {
+            checkCollision(nugget);
+        });
+    }
+
+    function addGoldEffect() {
+        const effect = document.createElement('div');
+        effect.classList.add('effect');
+        effect.textContent = '$';
+        const xPos = Math.random() * window.innerWidth / 2;
+        const yPos = Math.random() * window.innerHeight / 2;
+        effect.style.left = xPos + 'px';
+        effect.style.top = yPos + 'px';
+        document.body.appendChild(effect);
+        setTimeout(() => {
+            effect.remove();
+        }, 1000);
+    }
+
+    function startGoldRush() {
+        goldRushActive = true;
+        consecutiveGoldNuggets = 0;
+        document.getElementById('gold-rush').style.display = 'block';
+        setTimeout(() => {
+            clearInterval(nuggetInterval); // Clear the nuggetInterval when gold rush ends
+            document.getElementById('gold-rush').style.display = 'none';
+            goldRushActive = false;
+        }, 7000); // Gold rush lasts for 7 seconds
+        setTimeout(() => {
+            nuggetInterval = setInterval(dropMediumNuggets, 200); // Spawn 3 medium nuggets every 0.2 second
+        }, 1000); // Start spawning medium nuggets after 1 second
+    }
+
+    function dropMediumNuggets() {
+        const numNuggets = 3; // Always drop 3 medium nuggets during gold rush
+        for (let i = 0; i < numNuggets; i++) {
+            dropNugget('medium');
+        }
+    }
+
+    document.addEventListener('keydown', function(event) {
+        const basket = document.getElementById('basket');
+        const left = parseFloat(basket.style.left) || 0;
+        const top = parseFloat(basket.style.top) || 0;
+        const step = 10; // Step size for movement
+        if (event.key === 'ArrowLeft' && left > 0) {
+            basket.style.left = (left - step) + 'px';
+        } else if (event.key === 'ArrowRight' && left < document.getElementById('game-container').offsetWidth - 50) {
+            basket.style.left = (left + step) + 'px';
+        } else if (event.key === 'ArrowUp' && top > 0) {
+            basket.style.top = (top - step) + 'px';
+        } else if (event.key === 'ArrowDown' && top < document.getElementById('game-container').offsetHeight - 50) {
+            basket.style.top = (top + step) + 'px';
+        }
+    });
+
+    startGame();
+</script>
+</body>
+</html>
+
