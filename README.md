@@ -1,0 +1,1 @@
+Download all files and place them in the same folder. Then, just open the html in your broswer of choice. Please note, it will require support for png and mp3 files. Most browsers will include this support by default, but custom browers may need to have these features added. 
